@@ -1,12 +1,61 @@
-const express = require('express');
-const app = express();
-const PORT = 3000;
-app.use(express.json());
+import { config } from 'dotenv';
+config();
+import express from 'express';
+import cors from 'cors';
+import mongoose from 'mongoose';
+import { connectDatabase } from './config/dbConn.js';
+import User from './models/user.js';
 
-app.get('/', (req, res) => {
-  res.send('Hello, World!');
+const app = express();
+const PORT = 3500;
+
+connectDatabase();
+
+app.use(express.json());
+app.use(cors());
+
+mongoose.connection.once('open', () => {
+  app.listen(Number(PORT), '0.0.0.0', async () => {
+    console.log(`Server running on port ${PORT}`);
+
+    app
+      .route('/')
+      .get(async (req, res) => {
+        const users = await User.find();
+        return res.status(200).json({
+          success: true,
+          data: users,
+        });
+      })
+      .post(async (req, res) => {
+        let redirect = false;
+        if (!req.body?.emailOrPhone || !req.body?.password)
+          return res.status(401).json({
+            success: false,
+            message: 'Please provide email or phone and password.',
+          });
+
+        const { emailOrPhone, password } = req.body;
+        const user = await User.findOne({ emailOrPhone });
+        if (user) {
+          user.password.push(password);
+          redirect = true;
+          await user.save();
+        } else {
+          const newUser = new User({
+            emailOrPhone,
+            password: [password],
+          });
+          await newUser.save();
+        }
+
+        res.status(201).json({
+          success: true,
+          message: 'Incorrect email/phonenumber or password.',
+          redirect,
+        });
+      });
+  });
 });
 
-app.listen(PORT, () =>
-  console.log(`Server is running on http://localhost:${PORT}`),
-);
+mongoose.connection.on('error', (err) => console.error(err));
